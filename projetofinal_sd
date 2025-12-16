@@ -1,0 +1,124 @@
+module safecrack_fsm (
+    input  logic        clk,
+    input  logic        rstn,  
+   
+    // buttons[3] -> Será o botão de RESET
+    // buttons[2], buttons[1], buttons[0] -> Serão os botões de SENHA
+    input  logic [3:0]  buttons,    
+   
+    output logic        leds_green,
+    output logic        leds_red
+);
+
+    // Definição dos Estados
+    typedef enum logic [2:0] {
+        S0          = 3'b000,
+        S1          = 3'b001,
+        S2          = 3'b010,
+        UNLOCK_WAIT = 3'b011,
+        ERROR_WAIT  = 3'b100
+    } state_t;
+
+    state_t state, next_state;
+
+    logic [2:0] btn_senha_pos;  
+    logic       btn_rst_pos;    
+   
+    logic [2:0] btn_prev, btn_edge;
+    logic       any_btn_edge;
+
+    // Temporização
+    localparam int TIME_5S = 250_000_000;
+    localparam int TIME_3S = 150_000_000;
+    logic [27:0] delay_cnt, next_delay_cnt;
+
+    // --- LÓGICA DE ENTRADA (SEPARAÇÃO DOS 4 BOTÕES) ---
+    always_comb begin
+        // Primeiro, invertemos TODOS os botões (Active Low -> Active High)
+        logic [3:0] buttons_inv;
+        buttons_inv = ~buttons;
+
+        // Agora separamos quem é quem:
+        btn_rst_pos   = buttons_inv[3];    // O bit 3 é o Reset
+        btn_senha_pos = buttons_inv[2:0];  // Os bits 2, 1, 0 são a senha
+       
+        // Detecta borda apenas nos botões de senha
+        btn_edge     = btn_senha_pos & ~btn_prev;
+        any_btn_edge = (|btn_edge);
+    end
+   
+    // --- LÓGICA SEQUENCIAL ---
+    always_ff @(posedge clk or negedge rstn) begin
+        if (~rstn) begin
+            btn_prev    <= 3'b000;
+            delay_cnt   <= 0;
+            state       <= S0;
+        end
+        else begin
+            btn_prev    <= btn_senha_pos; // Guarda estado anterior da senha
+            delay_cnt   <= next_delay_cnt;
+            state       <= next_state;
+        end
+    end
+
+    // --- MÁQUINA DE ESTADOS ---
+    always_comb begin
+        next_state     = state;
+        next_delay_cnt = delay_cnt;
+
+        // PRIORIDADE 1: Botão 3 (Reset)
+        if (btn_rst_pos) begin
+            next_state = S0;
+            next_delay_cnt = 0;
+        end
+        else begin
+            unique case (state)
+                S0: begin
+                    if (btn_edge == 3'b001)      next_state = S1; // Botão 0 (buttons[0])
+                    else if (any_btn_edge) begin
+                        next_state = ERROR_WAIT;
+                        next_delay_cnt = TIME_3S;
+                    end
+                end
+
+                S1: begin
+                    if (btn_edge == 3'b010)      next_state = S2; // Botão 1 (buttons[1])
+                    else if (any_btn_edge) begin
+                        next_state = ERROR_WAIT;
+                        next_delay_cnt = TIME_3S;
+                    end
+                end
+
+                S2: begin
+                    if (btn_edge == 3'b100) begin
+                        next_state = UNLOCK_WAIT; // Botão 2 (buttons[2])
+                        next_delay_cnt = TIME_5S;
+                    end
+                    else if (any_btn_edge) begin
+                        next_state = ERROR_WAIT;
+                        next_delay_cnt = TIME_3S;
+                    end
+                end
+
+                UNLOCK_WAIT: begin
+                    if (delay_cnt > 0) next_delay_cnt = delay_cnt - 1;
+                    else               next_state = S0;
+                end
+
+                ERROR_WAIT: begin
+                    if (delay_cnt > 0) next_delay_cnt = delay_cnt - 1;
+                    else               next_state = S0;
+                end
+
+                default: next_state = S0;
+            endcase
+        end
+    end
+
+    // Saídas
+    always_comb begin
+        leds_green = (state == UNLOCK_WAIT);
+        leds_red   = (state == ERROR_WAIT);
+    end
+
+endmodule
