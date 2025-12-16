@@ -6,8 +6,10 @@ module safecrack_fsm (
     // buttons[2], buttons[1], buttons[0] -> Serão os botões de SENHA
     input  logic [3:0]  buttons,    
    
-    output logic        leds_green,
-    output logic        leds_red
+    output logic        led_green1,
+	 output logic        led_green2,
+	 output logic        led_green3,
+    output logic        led_red
 );
 
     // Definição dos Estados
@@ -117,8 +119,10 @@ module safecrack_fsm (
 
     // Saídas
     always_comb begin
-        leds_green = (state == UNLOCK_WAIT);
-        leds_red   = (state == ERROR_WAIT);
+        led_green1 = (state == UNLOCK_WAIT || state == S0);
+		  led_green2 = (state == UNLOCK_WAIT || state == S1);
+		  led_green3 = (state == UNLOCK_WAIT || state == S2);
+        led_red   = (state == ERROR_WAIT);
     end
 
 endmodule
